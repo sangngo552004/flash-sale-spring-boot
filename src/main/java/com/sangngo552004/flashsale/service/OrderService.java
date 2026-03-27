@@ -1,21 +1,19 @@
 package com.sangngo552004.flashsale.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sangngo552004.flashsale.entity.Order;
-import com.sangngo552004.flashsale.entity.OutboxEvent;
 import com.sangngo552004.flashsale.entity.Product;
 import com.sangngo552004.flashsale.repository.OrderRepository;
-import com.sangngo552004.flashsale.repository.OutboxRepository;
 import com.sangngo552004.flashsale.repository.ProductRepository;
 import com.sangngo552004.flashsale.util.Const;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
-import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -35,9 +33,7 @@ public class OrderService {
 
     private final StringRedisTemplate redisTemplate;
     private final OrderRepository orderRepo;
-    private final OutboxRepository outboxRepo;
     private final ProductRepository productRepo;
-    private final ObjectMapper objectMapper;
     private final PlatformTransactionManager transactionManager;
 
     private final Map<Long, Boolean> localSoldOutCache = new ConcurrentHashMap<>();
@@ -80,9 +76,8 @@ public class OrderService {
                     return MESSAGE_SOLD_OUT;
                 }
 
-                Order order = createPendingOrder(userId, productId, idempotencyKey);
-                persistOutbox(order);
-                return "ĐẶT HÀNG THÀNH CÔNG! Order ID: " + order.getId();
+                createPendingOrder(userId, productId, idempotencyKey);
+                return "ĐẶT HÀNG THÀNH CÔNG!";
             });
         } catch (DataIntegrityViolationException e) {
             return MESSAGE_DUPLICATE;
@@ -106,9 +101,8 @@ public class OrderService {
 
         try {
             return executeInTransaction(() -> {
-                Order order = createPendingOrder(userId, productId, idempotencyKey);
-                persistOutbox(order);
-                return "ĐẶT HÀNG THÀNH CÔNG! Order ID: " + order.getId();
+                createPendingOrder(userId, productId, idempotencyKey);
+                return "ĐẶT HÀNG THÀNH CÔNG!";
             });
         } catch (DataIntegrityViolationException e) {
             compensateFlashSaleStock(productId);
@@ -119,28 +113,14 @@ public class OrderService {
         }
     }
 
-    private Order createPendingOrder(String userId, Long productId, String idempotencyKey) {
+    private void createPendingOrder(String userId, Long productId, String idempotencyKey) {
         Order order = new Order();
         order.setUserId(userId);
         order.setProductId(productId);
         order.setAmount(BigDecimal.ONE);
         order.setIdempotencyKey(idempotencyKey);
         order.setStatus(Order.STATUS_PENDING);
-        return orderRepo.save(order);
-    }
-
-    private void persistOutbox(Order order) {
-        try {
-            OutboxEvent event = new OutboxEvent();
-            event.setAggregateType("ORDER");
-            event.setAggregateId(order.getId().toString());
-            event.setType("ORDER_CREATED");
-            event.setPayload(objectMapper.writeValueAsString(order));
-            event.setStatus(Const.OUTBOX_STATUS_PENDING);
-            outboxRepo.save(event);
-        } catch (Exception e) {
-            throw new IllegalStateException("Cannot persist outbox event", e);
-        }
+        orderRepo.save(order);
     }
 
     private boolean isRateLimited(String userId) {
