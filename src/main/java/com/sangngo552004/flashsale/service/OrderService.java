@@ -1,6 +1,5 @@
 package com.sangngo552004.flashsale.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sangngo552004.flashsale.entity.Order;
 import com.sangngo552004.flashsale.entity.OutboxEvent;
 import com.sangngo552004.flashsale.entity.Product;
@@ -16,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;

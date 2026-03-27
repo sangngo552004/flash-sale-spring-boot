@@ -24,8 +24,6 @@ public class Order {
 
     private BigDecimal amount;
 
-    // CỰC KỲ QUAN TRỌNG: Chống trùng lặp đơn hàng
-    // unique = true: Nếu DB có rồi, insert cái nữa sẽ bắn Exception
     @Column(name = "idempotency_key", unique = true, nullable = false)
     private String idempotencyKey;
 

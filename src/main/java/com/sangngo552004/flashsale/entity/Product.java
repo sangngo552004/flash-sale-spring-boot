@@ -19,11 +19,6 @@ public class Product {
 
     private String name;
 
-    /**
-     * Main persistent stock in MySQL.
-     * During an active flash sale, the flash-sale allocation is moved to Redis and this
-     * field keeps only the non-flash-sale stock balance in MySQL.
-     */
     private Integer stock;
 
     private boolean isFlashSale;
