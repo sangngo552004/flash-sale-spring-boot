@@ -37,24 +37,21 @@ Một worker chạy nền (`OrderTimeoutWorker`) được lên lịch mỗi 60 g
 2.  Chuyển trạng thái của chúng thành `CANCELLED`.
 3.  **Hoàn trả tồn kho:**
     *   Nếu là sản phẩm Flash Sale, cộng lại số lượng vào **Redis**.
-    *   Nếu là sản phẩm thường, cộng lại số lượng vào **Database**.
+    *   Nếu là sản phẩm thường, cộng lại số lượng vào **Database**
 
 ## 2. Đánh giá Kết quả Kiểm thử Tải (Load Testing)
 
 Sử dụng công cụ **k6** với kịch bản giả lập **500 người dùng ảo (VUs)** liên tục đặt hàng trong **10 giây**.
 
-
 ### 2.1. Luồng Flash Sale
 
 **Tình trạng:** **Rất Tốt & Hoạt động Đúng Thiết kế**
 
-**Kết quả nổi bật:**
-*   **Không bán lố:** Với 10 sản phẩm trong kho, hệ thống chỉ tạo đúng **10 đơn hàng** thành công.
-*   **Hiệu năng cao:** Hệ thống xử lý được **~11,600 requests/giây** (`checks_total`), cho thấy khả năng chịu tải cực tốt.
-*   **Cơ chế bảo vệ hiệu quả:**
-    *   Hơn 13,000 request bị chặn bởi thông báo "Hết hàng".
-    *   Hơn 10,000 request bị chặn bởi "Thao tác quá nhanh".
-*   **Tồn kho được quản lý đúng:** Sau test, tồn kho trên Redis về 0, trong khi tồn kho trong Database không bị ảnh hưởng, đúng với thiết kế tách biệt.
+#### Phân tích số liệu chi tiết:
+*   **`✗ Mua thành công: ✓ 10 / ✗ 23564`**: **Kết quả hoàn hảo.** Hệ thống đã bán ra chính xác **10 sản phẩm**, đúng bằng số lượng tồn kho ban đầu, và từ chối hơn 23,000 lượt mua khác. Điều này chứng tỏ cơ chế chống bán lố (overselling) hoạt động tuyệt đối.
+*   **`checks_total: 117,483 (11,678/s)`**: **Hiệu năng cực cao.** Hệ thống xử lý được gần **12,000 thao tác/giây**. Đây là minh chứng cho thấy kiến trúc sử dụng Redis và Local Cache có khả năng chịu tải rất tốt.
+*   **`✗ Hết hàng: ✓ 13,008` & `✗ Thao tác quá nhanh: ✓ 10,427`**: **Cơ chế bảo vệ hiệu quả.** Tổng cộng có hơn **23,400 request** đã bị chặn lại bởi các lớp phòng thủ (Rate Limiting và Cache), giúp bảo vệ tầng Database khỏi bị quá tải.
+*   **`Status is 200: 99%`**: **Độ ổn định cao.** Dù chịu tải rất lớn, 99% request vẫn nhận được phản hồi thành công từ server, cho thấy ứng dụng không bị sập hay treo.
 
 **Đánh giá:** Luồng Flash Sale đã đáp ứng xuất sắc các yêu cầu về hiệu năng, độ ổn định và tính chính xác trong môi trường tải cao.
 
@@ -62,11 +59,12 @@ Sử dụng công cụ **k6** với kịch bản giả lập **500 người dùn
 
 **Tình trạng:** **Hoạt động Đúng về Logic, nhưng Gặp Vấn đề Nghiêm trọng về Hiệu năng**
 
-**Kết quả nổi bật:**
-*   **Không bán lố:** Hệ thống vẫn đảm bảo chỉ bán đúng **10 sản phẩm** theo số lượng trong kho DB.
-*   **Thời gian phản hồi RẤT CAO:** Thời gian phản hồi trung bình lên tới **~1.8 giây**, không thể chấp nhận được trong thực tế.
-*   **Tỷ lệ lỗi HTTP cao:** **~15%** request bị lỗi, cho thấy hệ thống không ổn định.
-*   **Nút thắt cổ chai rõ ràng:** Chỉ có **8/500 VUs** hoạt động đồng thời, chứng tỏ các request bị xếp hàng chờ xử lý rất lâu.
+#### Phân tích số liệu chi tiết:
+*   **`✗ Mua thành công: ✓ 10`**: **Logic nghiệp vụ đúng.** Tương tự luồng Flash Sale, hệ thống vẫn đảm bảo chỉ bán đúng 10 sản phẩm theo số lượng trong kho DB.
+*   **`http_req_duration: avg=1.77s, p(95)=2.49s`**: **Thời gian phản hồi RẤT CAO.** Thời gian phản hồi trung bình là 1.77 giây, và có tới 5% người dùng phải chờ gần **2.5 giây** hoặc hơn. Đây là trải nghiệm người dùng không thể chấp nhận được.
+*   **`http_req_failed: 14.51% (430 requests)`**: **Độ ổn định kém.** Gần **15% request** bị lỗi hoàn toàn (timeout hoặc lỗi 5xx). Điều này cho thấy hệ thống không thể xử lý ổn định dưới tải.
+*   **`vus: 8 min=8 / max=500`**: **Đây là bằng chứng rõ ràng nhất của nút thắt cổ chai.** Mặc dù có 500 người dùng ảo, hệ thống chỉ có thể xử lý đồng thời **8 người dùng**. 492 người dùng còn lại phải xếp hàng chờ đợi, gây ra tình trạng tắc nghẽn và tăng vọt thời gian phản hồi.
+*   **`http_reqs: 2,962 (248/s)`**: **Thông lượng (throughput) thấp.** Hệ thống chỉ xử lý được khoảng **248 request/giây**, thấp hơn rất nhiều so với luồng Flash Sale.
 
 **Đánh giá:** Mặc dù logic nghiệp vụ đúng, luồng mua hàng thông thường đang bị **nghẽn cổ chai nghiêm trọng ở tầng Database**. Việc nhiều request cùng lúc cố gắng `UPDATE` một dòng dữ liệu đã gây ra tình trạng tranh chấp khóa (lock contention), dẫn đến hiệu năng sụt giảm thê thảm.
 
@@ -75,8 +73,8 @@ Sử dụng công cụ **k6** với kịch bản giả lập **500 người dùn
 Dựa trên kết quả phân tích, các công việc cần ưu tiên trong giai đoạn tiếp theo bao gồm:
 
 1.  **[Ưu tiên Cao] Tối ưu hóa Hiệu năng cho Luồng Mua hàng Thông thường:**
-    *   **Phân tích Log & DB:** Kiểm tra log ứng dụng và các công cụ giám sát DB để tìm các lỗi cụ thể như `DeadlockFoundException`, `LockAcquisitionException` và các truy vấn chậm.
-    *   **Xem xét lại Chiến lược Khóa:** Đánh giá lại việc sử dụng `UPDATE` trực tiếp. Cân nhắc các phương án thay thế nếu sản phẩm thường cũng có khả năng được mua nhiều cùng lúc, ví dụ:
+    *   **Phân tích Log & DB:** Kiểm tra log ứng dụng và các công cụ giám sát DB để tìm các lỗi cụ thể như `DeadlockFoundException`, `LockAcquisitionException` và các truy vấn chậm trong quá trình chạy test.
+    *   **Xem xét lại Chiến lược Khóa:** Đánh giá lại việc sử dụng `UPDATE` trực tiếp. Cần cân nhắc các phương án thay thế nếu sản phẩm thường cũng có khả năng được mua nhiều cùng lúc, ví dụ:
         *   Áp dụng một phiên bản "nhẹ" của cơ chế Redis cho các sản phẩm "hot".
         *   Sử dụng Optimistic Locking (với cột `version`) một cách triệt để hơn để xử lý xung đột ở tầng ứng dụng thay vì để DB khóa.
     *   **Tối ưu hóa Transaction:** Giảm thiểu thời gian transaction được giữ bằng cách đưa các tác vụ không cần thiết ra ngoài.
@@ -84,6 +82,3 @@ Dựa trên kết quả phân tích, các công việc cần ưu tiên trong gia
 2.  **[Ưu tiên Trung bình] Hoàn thiện Kịch bản Test:**
     *   Xây dựng kịch bản test riêng cho việc kiểm tra cơ chế chống trùng lặp (`Idempotency`), bằng cách cố định `requestId` cho một nhóm request.
     *   Xây dựng bài test để xác minh `OrderTimeoutWorker` hoạt động đúng và hoàn kho chính xác sau một khoảng thời gian nhất định.
-
-3.  **[Ưu tiên Thấp] Triển khai CDC:**
-    *   Hiện tại, `OutboxWorker` đang bị vô hiệu hóa. Cần lên kế hoạch triển khai một hệ thống CDC (như Debezium) để hoàn thiện kiến trúc microservices, giúp các hệ thống khác có thể phản ứng với sự kiện `ORDER_CREATED` một cách bất đồng bộ.
