@@ -1,72 +1,54 @@
-version: "3.8"
+version: '3.8'
 
 services:
-  mysql:
-    image: mysql:8.4
-    container_name: flashsale-mysql
-    command:
-      - --server-id=223344
-      - --log-bin=mysql-bin
-      - --binlog-format=ROW
-      - --binlog-row-image=FULL
-      - --gtid-mode=ON
-      - --enforce-gtid-consistency=ON
+  app:
+    build: .
+    ports:
+      - "8080:8080"
     environment:
-      MYSQL_ROOT_PASSWORD: 123456
-      MYSQL_DATABASE: flashsale_db
+      - SPRING_DATASOURCE_URL=jdbc:mysql://db:3306/flashsale_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=false
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - SPRING_REDIS_HOST=redis
+      - SPRING_REDIS_PORT=6379
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - flashsale-network
+
+  db:
+    image: mysql:8.0
     ports:
       - "3306:3306"
+    environment:
+      - MYSQL_DATABASE=flashsale_db
+      - MYSQL_ROOT_PASSWORD=root
     volumes:
-      - mysql-data:/var/lib/mysql
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    networks:
+      - flashsale-network
 
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.1
-    container_name: flashsale-zookeeper
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+  redis:
+    image: redis:7.0-alpine
     ports:
-      - "2181:2181"
-
-  kafka:
-    image: confluentinc/cp-kafka:7.6.1
-    container_name: flashsale-kafka
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-      - "29092:29092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-
-  connect:
-    image: debezium/connect:2.7.3.Final
-    container_name: flashsale-connect
-    depends_on:
-      - kafka
-      - mysql
-    ports:
-      - "8083:8083"
-    environment:
-      BOOTSTRAP_SERVERS: kafka:29092
-      GROUP_ID: 1
-      CONFIG_STORAGE_TOPIC: flashsale_connect_configs
-      OFFSET_STORAGE_TOPIC: flashsale_connect_offsets
-      STATUS_STORAGE_TOPIC: flashsale_connect_statuses
-      CONFIG_STORAGE_REPLICATION_FACTOR: 1
-      OFFSET_STORAGE_REPLICATION_FACTOR: 1
-      STATUS_STORAGE_REPLICATION_FACTOR: 1
-      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
-      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
-      KEY_CONVERTER_SCHEMAS_ENABLE: "false"
-      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - flashsale-network
 
 volumes:
-  mysql-data:
+  mysql_data:
+  redis_data:
+
+networks:
+  flashsale-network:
+    driver: bridge
